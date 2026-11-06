@@ -1847,6 +1847,29 @@ export const CSS = `
 }
 .st-edit-actions > span { color: var(--muted); font-size: 12px; line-height: 1.4; }
 .st-edit-actions .st-btn { flex: none; }
+
+/* Publish: the listing's license choice. Whole-card radios, so each is an
+   easy target and its one-line meaning reads with the name. */
+.st-license-options { display: grid; gap: 8px; margin-top: 8px; }
+.st-license-option {
+  position: relative; display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.st-license-option input { flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+.st-license-option:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.st-license-option.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+@media (hover: hover) { .st-license-option:not(.is-active):hover { background: var(--surface-2, var(--surface)); } }
+.st-license-copy { display: grid; gap: 3px; min-width: 0; }
+.st-license-title { display: flex; align-items: center; gap: 8px; font: 650 15px/1.3 var(--font); }
+.st-license-badge { padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--st-accent-text, var(--accent)); font: 650 11px/1.5 var(--font); }
+.st-license-summary { color: var(--muted); font: 400 13px/1.45 var(--font); }
+.st-edit-hint.is-needed { color: var(--text); font-weight: 600; }
+.st-publish-license { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 13px; }
+.st-publish-license > span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.st-publish-license > strong { flex: 1 1 auto; color: var(--text); font-weight: 650; }
+@media (prefers-reduced-motion: reduce) { .st-license-option { transition: none; } }
+
 @media (hover: hover) {
   .st-check-agent:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 16%, transparent); }
   .st-edit-add:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }

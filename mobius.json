@@ -2,7 +2,7 @@
   "id": "store",
   "package_id": "urn:uuid:cbcc33c4-6ff4-4bab-abe7-b9d9363ab72b",
   "name": "App Store",
-  "version": "1.25.0",
+  "version": "1.26.0",
   "description": "Discover, install, and update Möbius apps.",
   "author": "mobius-os",
   "license": "MIT",

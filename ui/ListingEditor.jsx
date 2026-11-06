@@ -5,7 +5,7 @@ import {
   CheckCircleFilled, Circle, ImageSquare, Plus, Sparkles, Trash,
 } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useId, useRef, useState } from 'react'
-import { LISTING_LIMITS } from '../constants.js'
+import { LISTING_LIMITS, STORE_LICENSES } from '../constants.js'
 import { utf8Length } from '../domain.js'
 
 const {
@@ -146,6 +146,10 @@ export function ListingEditor({
                   onChange={(event) => update({ description: event.target.value })} />
       </label>
 
+      {typeof draft.license === 'string' ? (
+        <LicensePicker value={draft.license} onChange={(license) => update({ license })} />
+      ) : null}
+
       <fieldset className="st-edit-field">
         <legend className="st-edit-label">Screenshots <span className="st-edit-count">{shots.length}/{MAX_SCREENSHOTS}</span></legend>
         <p className="st-edit-hint">Everything here becomes public. Show demo or empty data, not your own.</p>
@@ -219,5 +223,36 @@ export function ListingEditor({
         </button>
       </div>
     </form>
+  )
+}
+
+// How others may use the app once its source is public. Publishing requires
+// one; saving writes the choice and the license's full text into the source.
+function LicensePicker({ value, onChange }) {
+  const ids = useId()
+  return (
+    <fieldset className="st-edit-field st-edit-license">
+      <legend className="st-edit-label">License</legend>
+      <p className="st-edit-hint">Publishing makes your app’s source public. Choose how others may use it.</p>
+      <div className="st-license-options" role="radiogroup" aria-label="License">
+        {STORE_LICENSES.map((license) => {
+          const checked = value === license.id
+          return (
+            <label key={license.id} className={`st-license-option${checked ? ' is-active' : ''}`}>
+              <input type="radio" name={`${ids}-license`} value={license.id} checked={checked}
+                     onChange={() => onChange(license.id)} />
+              <span className="st-license-copy">
+                <span className="st-license-title">
+                  {license.title}
+                  {license.recommended ? <span className="st-license-badge">Recommended</span> : null}
+                </span>
+                <span className="st-license-summary">{license.summary}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+      {!value ? <p className="st-edit-hint is-needed">Pick a license to publish this app.</p> : null}
+    </fieldset>
   )
 }

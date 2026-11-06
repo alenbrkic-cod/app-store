@@ -17,10 +17,32 @@ export const CATALOG_URL =
 
 // Human-facing release label for diagnostics. The Store's self-update banner
 // uses verified source provenance, not this value, to decide availability.
-export const STORE_VERSION = '1.25.0'
+export const STORE_VERSION = '1.26.0'
 export const STORE_SELF = {
   manifest_url: 'https://raw.githubusercontent.com/mobius-os/app-store/main/mobius.json',
   raw_base: 'https://raw.githubusercontent.com/mobius-os/app-store/main/',
+}
+
+// The free licenses publishing offers, in the order shown; the first is the
+// recommendation. Ids are SPDX identifiers and must match the platform's
+// store_licenses.OFFERED_LICENSES, which refuses anything else.
+export const STORE_LICENSES = Object.freeze([
+  Object.freeze({
+    id: 'MIT', title: 'MIT', recommended: true,
+    summary: 'Anyone can use, change and share your app, even commercially, as long as your name stays on it.',
+  }),
+  Object.freeze({
+    id: 'Apache-2.0', title: 'Apache 2.0',
+    summary: 'Just as open as MIT, and also promises people can use any patents in your app.',
+  }),
+  Object.freeze({
+    id: 'GPL-3.0-or-later', title: 'GPL 3.0',
+    summary: 'Anyone can use and change it, but anything they share built from it must stay open under the same license.',
+  }),
+])
+
+export function storeLicense(id) {
+  return STORE_LICENSES.find((item) => item.id === id) || null
 }
 
 // The platform's Store listing contract, in UTF-8 bytes as the publisher

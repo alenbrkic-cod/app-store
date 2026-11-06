@@ -1418,6 +1418,28 @@ test('an edited listing saves as one whole listing, keeping unchanged images by 
   assert.equal(listingPayload(legacy).icon, undefined)
 })
 
+test('a license is sent once chosen, and only to a Möbius that requires one', async () => {
+  const { listingDraftFromPreview, listingPayload, savedListingSurvived } = await import('../domain.js')
+  const older = listingDraftFromPreview({ draft: { tagline: 'T', description: 'D', screenshots: [] } }, {})
+  assert.equal(older.license, null)
+  assert.equal('license' in listingPayload(older), false)
+  const unchosen = listingDraftFromPreview({ draft: { tagline: 'T', description: 'D', license: '', screenshots: [] } }, {})
+  assert.equal(unchosen.license, '')
+  assert.equal('license' in listingPayload(unchosen), false, 'no choice keeps whatever the source has')
+  const sent = listingPayload({ ...unchosen, license: 'Apache-2.0' })
+  assert.equal(sent.license, 'Apache-2.0')
+  const readBack = { tagline: 'T', description: 'D', screenshots: [] }
+  assert.equal(savedListingSurvived(sent, { ...readBack, license: 'Apache-2.0' }), true)
+  assert.equal(savedListingSurvived(sent, { ...readBack, license: 'MIT' }), false)
+})
+
+test('the Store offers the same free licenses the platform accepts', async () => {
+  const { STORE_LICENSES } = await import('../constants.js')
+  assert.deepEqual(STORE_LICENSES.map((item) => item.id), ['MIT', 'Apache-2.0', 'GPL-3.0-or-later'])
+  assert.equal(STORE_LICENSES.filter((item) => item.recommended).length, 1)
+  assert.ok(STORE_LICENSES.every((item) => item.title && item.summary))
+})
+
 test('the publish review lets the owner fill in the listing by hand', async () => {
   const source = await readFile(join(root, '..', 'ui', 'PublisherTab.jsx'), 'utf8')
   const editor = await readFile(join(root, '..', 'ui', 'ListingEditor.jsx'), 'utf8')

@@ -1340,6 +1340,8 @@ export function listingDraftFromPreview(preview, app) {
   return {
     tagline: draft.tagline || '',
     description: draft.description || '',
+    // null when this Möbius does not require a license yet; the picker stays hidden.
+    license: typeof draft.license === 'string' ? draft.license : null,
     icon: draft.icon ? kept(draft.icon) : (app?.icon_url ? { url: app.icon_url } : null),
     iconChanged: false,
     hero: kept(draft.hero),
@@ -1365,6 +1367,8 @@ export function listingPayload(draft) {
   return {
     tagline: draft.tagline.trim(),
     description: draft.description.trim(),
+    // Only a chosen license is sent: omitting it keeps the current one.
+    ...(draft.license ? { license: draft.license } : {}),
     ...(draft.iconChanged && draft.icon?.data ? { icon: { data_base64: draft.icon.data } } : {}),
     hero: imagePayload(draft.hero),
     screenshots: draft.screenshots
@@ -1398,6 +1402,7 @@ export function savedListingSurvived(sent, draft) {
   const text = (value) => (typeof value === 'string' ? value.trim() : '')
   return text(draft.tagline) === sent.tagline
     && text(draft.description) === sent.description
+    && (sent.license === undefined || text(draft.license) === sent.license)
     && (!sent.icon || !!text(draft.icon))
     && savedArtSurvived(sent.hero, draft.hero)
     && shots.length === sent.screenshots.length

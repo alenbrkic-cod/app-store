@@ -13,6 +13,7 @@ import {
   publishedAppView,
   savedListingSurvived,
 } from '../domain.js'
+import { storeLicense } from '../constants.js'
 import { ListingChecklist, ListingEditor } from './ListingEditor.jsx'
 import { PublishCheck } from './PublishCheck.jsx'
 import { PublishedAppPage, YourAppsList } from './PublishedApps.jsx'
@@ -535,6 +536,16 @@ export function PublisherTab({
                            onChange={(event) => setLocalRepositoryName(event.target.value)} disabled={!!publishingId} />
                   </div>
                 </label>
+                {listing?.license ? (
+                  <div className="st-publish-license">
+                    <span>License</span>
+                    <strong>{storeLicense(listing.license)?.title || listing.license}</strong>
+                    <button type="button" className="st-link-btn" disabled={!!publishingId}
+                            onClick={() => { setConfirmed(false); setEditing(true) }}>
+                      Change
+                    </button>
+                  </div>
+                ) : null}
                 <PublishCheck state={checkState} check={check} busy={checkBusy}
                               onRun={runCheck} onFix={fixCheck} onStop={() => stopWaiting(checkRequest)} />
                 <label className="st-publish-consent">

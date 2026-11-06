@@ -62,3 +62,52 @@ test('listing editor explains disabled Save for over-limit UTF-8 caption and alt
     await rm(buildDir, { recursive: true, force: true })
   }
 })
+
+test('the license picker offers each free license and records the choice', async () => {
+  const require = createRequire(join(process.env.MOBIUS_FRONTEND_NODE_MODULES, 'package.json'))
+  const { rolldown } = await import(pathToFileURL(require.resolve('rolldown')).href)
+  const dir = `${buildDir}-license`
+  await mkdir(dir, { recursive: true })
+  const build = await rolldown({
+    input: join(here, '..', 'ui', 'ListingEditor.jsx'), platform: 'node', tsconfig: false,
+    external: ['react', 'react/jsx-runtime'],
+    resolve: { alias: { '@openai/apps-sdk-ui/components/Icon': join(here, 'runtime-icon-stub.mjs') } },
+    transform: { jsx: 'react-jsx' },
+  })
+  const output = join(dir, 'editor.mjs')
+  await build.write({ file: output, format: 'es' })
+  await build.close()
+  const { ListingEditor } = await import(pathToFileURL(output).href)
+  const dom = new JSDOM('<div id="root"></div>')
+  const keys = ['window', 'document', 'HTMLElement', 'IS_REACT_ACT_ENVIRONMENT']
+  const old = Object.fromEntries(keys.map(key => [key, globalThis[key]]))
+  Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
+  const root = createRoot(dom.window.document.getElementById('root'))
+  let draft = { tagline: 'T', description: 'D', icon: null, hero: null, screenshots: [], license: '' }
+  const render = () => act(async () => root.render(React.createElement(ListingEditor, {
+    draft, dirty: true, app: { name: 'Example' }, onSave() {},
+    setDraft(change) { draft = typeof change === 'function' ? change(draft) : change },
+  })))
+  try {
+    await render()
+    const doc = dom.window.document
+    const radios = [...doc.querySelectorAll('.st-edit-license input[type="radio"]')]
+    assert.deepEqual(radios.map((radio) => radio.value), ['MIT', 'Apache-2.0', 'GPL-3.0-or-later'])
+    assert.ok(radios.every((radio) => !radio.checked))
+    assert.match(doc.querySelector('.st-edit-license').textContent, /Pick a license to publish/)
+    await act(async () => radios[1].click())
+    assert.equal(draft.license, 'Apache-2.0')
+    await render()
+    assert.equal(doc.querySelector('.st-edit-license input[value="Apache-2.0"]').checked, true)
+    assert.doesNotMatch(doc.querySelector('.st-edit-license').textContent, /Pick a license to publish/)
+    // A Möbius that does not require a license yet gets no picker.
+    draft = { ...draft, license: null }
+    await render()
+    assert.equal(doc.querySelector('.st-edit-license'), null)
+  } finally {
+    await act(async () => root.unmount())
+    dom.window.close()
+    Object.assign(globalThis, old)
+    await rm(dir, { recursive: true, force: true })
+  }
+})

@@ -1792,6 +1792,31 @@ export const CSS = `
   border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); cursor: pointer; white-space: nowrap;
 }
 .st-check-agent:disabled { opacity: .55; cursor: default; }
+.st-checklist-head > .st-checklist-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.st-agent-status { display: inline-flex; align-items: center; gap: 8px; }
+.st-check-agent.is-working { display: inline-flex; align-items: center; gap: 7px; color: var(--text); border-style: dashed; }
+.st-agent-pulse {
+  flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .st-agent-pulse { animation: st-agent-pulse 1.6s ease-out infinite; }
+}
+@keyframes st-agent-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+.st-agent-conflicts { display: grid; gap: 10px; }
+.st-agent-conflict {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 14px; border-radius: 14px; background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.st-agent-conflict > div:first-child { display: grid; gap: 3px; min-width: 0; flex: 1 1 260px; }
+.st-agent-conflict strong { font-size: 14px; }
+.st-agent-conflict span { color: var(--muted); font-size: 12px; }
+.st-agent-conflict q { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.st-agent-conflict-actions { display: flex; align-items: center; gap: 12px; }
 
 .st-listing-editor { display: grid; gap: 18px; }
 .st-edit-identity { display: flex; align-items: center; gap: 14px; }
@@ -1854,6 +1879,7 @@ export const CSS = `
 @media (max-width: 680px) {
   .st-listing-work { padding: 4px 12px 18px; }
   .st-checklist-head .st-btn { width: 100%; justify-content: center; }
+  .st-checklist-actions { width: 100%; }
   .st-edit-actions { margin: 0 -12px -18px; padding: 12px; }
 }
 .st-publish-advanced { margin-top: 24px; }

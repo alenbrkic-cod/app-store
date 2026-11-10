@@ -38,21 +38,44 @@ function ImagePicker({ label, onPick, disabled, children, className = '' }) {
   )
 }
 
-export function ListingChecklist({ checklist, agentBusy, onAgent }) {
+// `agent` is the one agent working on this listing, if any: rows it was asked
+// for show its progress instead of a second request, and asking for another
+// part adds that part to the same agent's chat.
+export function ListingChecklist({ checklist, agentBusy, agent = null, onAgent, onViewAgent }) {
   const required = checklist.filter((item) => !item.optional)
   const done = required.filter((item) => item.done).length
+  const parts = agent?.parts || []
+  const working = (id) => !!agent && (parts.includes('all') || parts.includes(id))
+  const agentNote = agent?.awaitingOwner ? 'Needs your answer' : 'Agent working…'
   return (
     <section className="st-checklist" aria-label="What this listing needs">
       <div className="st-checklist-head">
         <div>
           <strong>{done === required.length ? 'Everything needed is here' : `${required.length - done} of ${required.length} still needed`}</strong>
-          <span>Fill these in below, or hand any part to an agent.</span>
+          <span>
+            {agent
+              ? (agent.awaitingOwner
+                ? 'The agent has a question for you in its chat.'
+                : 'An agent is working on this listing. Its parts appear here as it finishes them.')
+              : 'Fill these in below, or hand any part to an agent.'}
+          </span>
         </div>
-        <button type="button" className="st-btn st-btn-secondary" disabled={agentBusy}
-                onClick={() => onAgent('')}>
-          <Sparkles width="16" height="16" aria-hidden="true" />
-          {agentBusy ? 'Opening agent…' : 'Do it all with an agent'}
-        </button>
+        <div className="st-checklist-actions">
+          {agent ? (
+            <button type="button" className={`st-btn ${agent.awaitingOwner ? 'st-btn-primary' : 'st-btn-secondary'} st-agent-status`}
+                    onClick={onViewAgent}>
+              {agent.awaitingOwner ? null : <span className="st-agent-pulse" aria-hidden="true" />}
+              {agent.awaitingOwner ? 'Answer the agent' : 'View agent work'}
+            </button>
+          ) : null}
+          {!parts.includes('all') ? (
+            <button type="button" className="st-btn st-btn-secondary" disabled={agentBusy}
+                    onClick={() => onAgent('')}>
+              <Sparkles width="16" height="16" aria-hidden="true" />
+              {agentBusy ? 'Opening agent…' : agent ? 'Do the rest too' : 'Do it all with an agent'}
+            </button>
+          ) : null}
+        </div>
       </div>
       <ul>
         {checklist.map((item) => {
@@ -68,12 +91,18 @@ export function ListingChecklist({ checklist, agentBusy, onAgent }) {
                 </span>
                 {!item.done && item.message ? <span className="st-check-note">{item.message}</span> : null}
               </div>
-              {!item.done && !automatic ? (
+              {item.done || automatic ? <span /> : working(item.id) ? (
+                <button type="button" className="st-check-agent is-working" onClick={onViewAgent}
+                        aria-label={`${item.label}: ${agentNote} View the agent’s chat`}>
+                  {agent.awaitingOwner ? null : <span className="st-agent-pulse" aria-hidden="true" />}
+                  {agentNote}
+                </button>
+              ) : (
                 <button type="button" className="st-check-agent" disabled={agentBusy}
                         onClick={() => onAgent(item.id)}>
                   Ask an agent
                 </button>
-              ) : <span />}
+              )}
             </li>
           )
         })}

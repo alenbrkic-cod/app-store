@@ -1102,16 +1102,34 @@ export async function watchUpdateBatch(id, token, onSnapshot, { signal } = {}) {
   }
 }
 
-export async function createAppChat(title, token, { ownerVisible = false } = {}) {
+export async function createAppChat(title, token, { ownerVisible = false, scope, scopeLabel } = {}) {
   const res = await fetch('/api/app-chats', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ title, owner_visible: ownerVisible }),
+    body: JSON.stringify({
+      title,
+      owner_visible: ownerVisible,
+      ...(scope ? { scope, scope_label: scopeLabel || undefined } : {}),
+    }),
   })
   return await readJsonOrThrow(res, 'Could not create review chat')
+}
+
+// The Store's newest chat in one scope (most recent first from the server),
+// with whether its agent is working now or waiting for the owner; null when
+// there is none. Rows are matched by their own scope: a Möbius that predates
+// scoped chats ignores the filter, and reusing an unrelated chat would be
+// worse than starting a new one.
+export async function latestScopedAppChat(scope, token) {
+  const res = await fetch(`/api/app-chats?${new URLSearchParams({ scope })}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const rows = await readJsonOrThrow(res, 'Could not read the agent chat')
+  const chat = Array.isArray(rows) ? rows.find((row) => row?.scope === scope) : null
+  return chat?.id ? { id: chat.id, running: !!chat.running, awaitingOwner: !!chat.awaiting_owner } : null
 }
 
 export async function seedChatMessage(chatId, content, token) {

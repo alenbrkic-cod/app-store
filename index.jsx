@@ -22,6 +22,7 @@ import {
   buildUpdateFailureMessage,
   buildUpdateReviewMessage,
   buildListingAgentMessage,
+  listingAgentScope,
   buildPublishCheckMessage,
   buildPublishFixMessage,
   listingDraftFromPreview,
@@ -66,6 +67,7 @@ import {
 } from './domain.js'
 import {
   createAppChat,
+  latestScopedAppChat,
   createConflictResolverChat,
   createConflictResolverBatch,
   submitUpdateBatch,
@@ -1936,22 +1938,34 @@ export default function App({ appId, token }) {
 
   // Publishing stays in the Store while an owner-visible agent works. The
   // conversation remains available as optional detail rather than navigation.
+  // Each app's listing has one agent chat: later requests, for the same part
+  // or another, continue it instead of starting a parallel agent.
   const handleListingAgent = useCallback(async (app, problem, focus = '') => {
-    if (!app?.id) return false
+    if (!app?.id) return null
+    const name = app.name || app.slug
+    const scope = listingAgentScope(app.id)
     try {
-      const chat = await createAppChat(`Get ${app.name || app.slug} ready to publish`, token, { ownerVisible: true })
-      await seedChatMessage(chat.id, buildListingAgentMessage({ app, problem, focus }), token)
+      const existing = await latestScopedAppChat(scope, token)
+      const chatId = existing?.id
+        || (await createAppChat(`Get ${name} ready to publish`, token, { ownerVisible: true, scope, scopeLabel: name })).id
+      await seedChatMessage(chatId, buildListingAgentMessage({ app, problem, focus, followUp: !!existing }), token)
       setToast({
         kind: 'success',
-        message: `An agent is preparing ${app.name || app.slug}. You can keep working here.`,
-        action: { label: 'View work', onClick: () => openChat(chat.id) },
+        message: existing?.running
+          ? `Added to the agent already working on ${name}.`
+          : `An agent is preparing ${name}. You can keep working here.`,
+        action: { label: 'View work', onClick: () => openChat(chatId) },
       })
-      return true
+      return { chatId }
     } catch (error) {
       setToast({ kind: 'error', message: error.message || 'Could not open an agent chat.' })
-      return false
+      return null
     }
   }, [token])
+
+  const handleListingAgentStatus = useCallback((app) => (
+    app?.id ? latestScopedAppChat(listingAgentScope(app.id), token) : Promise.resolve(null)
+  ), [token])
 
   // The creator-run agent check: an owner-visible agent reads the exact
   // accepted revision and writes its verdict into this Store's storage, which
@@ -2623,6 +2637,8 @@ export default function App({ appId, token }) {
             onSaveListing={(localAppId, listing) => saveLocalListing(token, localAppId, listing)}
             onPrepareImage={prepareListingImage}
             onListingAgent={handleListingAgent}
+            onListingAgentStatus={handleListingAgentStatus}
+            onOpenChat={openChat}
             onRunCheck={handlePublishCheck}
             onFixCheck={handlePublishFix}
             onLoadReviews={loadPublisherReviews}

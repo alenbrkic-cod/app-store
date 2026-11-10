@@ -2,8 +2,15 @@
 import { ChevronLeft, FileUpload, Search } from '@openai/apps-sdk-ui/components/Icon'
 import React, { useEffect, useRef, useState } from 'react'
 import {
+  LISTING_AGENT_POLL_MS,
+  LISTING_FIELD_LABELS,
+  listingAgentRunAfterStatus,
   listingDraftFromPreview,
+  listingFieldsDiffer,
   listingPayload,
+  mergeListingUpdate,
+  observedListingAgentRun,
+  startedListingAgentRun,
   parsePublishCheck,
   PUBLISH_CHECK_POLL_MS,
   PUBLISH_CHECK_TIMEOUT_MS,
@@ -79,6 +86,34 @@ function assetUrl(preview, path) {
   return preview?.asset_root && path ? `${preview.asset_root}${path}` : ''
 }
 
+// Fields where the agent's new value met the owner's own unsaved edit.
+function AgentConflicts({ conflicts, onResolve }) {
+  const fields = Object.keys(conflicts)
+  if (!fields.length) return null
+  return (
+    <div className="st-agent-conflicts" role="status">
+      {fields.map((field) => {
+        const value = conflicts[field]
+        return (
+          <div key={field} className="st-agent-conflict">
+            <div>
+              <strong>The agent wrote a new {LISTING_FIELD_LABELS[field]}</strong>
+              <span>You changed it here too, so yours is still in the form.</span>
+              {typeof value === 'string' && value.trim() ? <q>{value.trim().slice(0, 280)}</q> : null}
+            </div>
+            <div className="st-agent-conflict-actions">
+              <button type="button" className="st-btn st-btn-secondary" onClick={() => onResolve(field, true)}>
+                Use the agent’s
+              </button>
+              <button type="button" className="st-link-btn" onClick={() => onResolve(field, false)}>Keep mine</button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function PublisherTab({
   installed,
   identity,
@@ -87,6 +122,8 @@ export function PublisherTab({
   onRefreshViewer,
   onPreviewLocal,
   onListingAgent,
+  onListingAgentStatus,
+  onOpenChat,
   onSaveListing,
   onPrepareImage,
   onPublishLocal,
@@ -126,6 +163,12 @@ export function PublisherTab({
   const [previewError, setPreviewError] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [askingAgent, setAskingAgent] = useState(false)
+  // The one agent chat working on the open app's listing; see
+  // startedListingAgentRun. Its applied parts flow into the form below.
+  const [agentRun, setAgentRun] = useState(null)
+  // Fields the agent changed that the owner had also edited: field -> the
+  // agent's value, offered as Use it / Keep mine.
+  const [agentConflicts, setAgentConflicts] = useState({})
   const [draft, setDraft] = useState(null)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -150,7 +193,15 @@ export function PublisherTab({
   const confirmHeadingRef = useRef(null)
   const confirmShownRef = useRef(false)
   const previewGateRef = useRef(null)
+  // Latest form state for the agent refresh, which runs from a timer.
+  const liveRef = useRef({})
+  const saveEpochRef = useRef(0)
+  // Remounts the editor (clearing its image errors) on a full reload only,
+  // never under the owner's cursor when an agent's part arrives.
+  const [editorEpoch, setEditorEpoch] = useState(0)
   if (!previewGateRef.current) previewGateRef.current = createPublicationPreviewGate()
+  liveRef.current = { candidate, preview, draft, saving }
+  const agentActive = !!(agentRun?.active && candidate && agentRun.appId === candidate.id)
   const repositoryValid = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository.trim())
   const commitValid = /^[0-9a-fA-F]{40,64}$/.test(commitSha.trim())
   const localRepositoryValid = /^[A-Za-z0-9_.-]{1,100}$/.test(localRepositoryName.trim())
@@ -261,6 +312,8 @@ export function PublisherTab({
     setDraft(nextDraft)
     setDirty(false)
     setEditing(false)
+    setAgentConflicts({})
+    setEditorEpoch((epoch) => epoch + 1)
     setConfirmed(false)
     if (result?.repository_name) setLocalRepositoryName(result.repository_name)
   }
@@ -269,6 +322,12 @@ export function PublisherTab({
     const requestId = previewGateRef.current.begin()
     onNavigate?.()
     setCandidate(app)
+    setAgentRun(null)
+    setAgentConflicts({})
+    onListingAgentStatus?.(app).then((status) => {
+      if (liveRef.current.candidate?.id !== app.id) return
+      setAgentRun((run) => (run?.appId === app.id ? run : observedListingAgentRun(app.id, status)))
+    }).catch(() => {})
     setConfirmed(false)
     setPreview(null)
     setPreviewError('')
@@ -289,6 +348,7 @@ export function PublisherTab({
     if (!candidate || !draft || saving) return
     const app = candidate
     const requestId = previewGateRef.current.begin()
+    saveEpochRef.current += 1
     setSaving(true)
     setSaveError('')
     setConfirmed(false)
@@ -333,17 +393,107 @@ export function PublisherTab({
     setLocalRepositoryName('')
     setDraft(null)
     setSaveError('')
+    setAgentRun(null)
+    setAgentConflicts({})
   }
 
   async function askAgent(problem, focus = '') {
     if (!candidate || askingAgent) return
+    const app = candidate
     setAskingAgent(true)
     try {
-      await onListingAgent?.(candidate, problem, focus)
+      const result = await onListingAgent?.(app, problem, focus)
+      if (result?.chatId) {
+        setAgentRun((run) => startedListingAgentRun(run, { appId: app.id, chatId: result.chatId, focus }))
+      }
     } finally {
       setAskingAgent(false)
     }
   }
+
+  function viewAgent() {
+    if (agentRun?.chatId) onOpenChat?.(agentRun.chatId)
+  }
+
+  // A newer accepted listing (the agent applied a part) merges into the open
+  // form: untouched fields take it, the owner's edits stay. Skipped while a
+  // save is in flight, whose own reload is authoritative.
+  async function refreshListingFromSource(app) {
+    const epoch = saveEpochRef.current
+    if (liveRef.current.saving) return
+    let result
+    try {
+      result = await onPreviewLocal?.(app.id)
+    } catch {
+      return
+    }
+    const live = liveRef.current
+    if (!result || live.candidate?.id !== app.id || live.saving || epoch !== saveEpochRef.current) return
+    if (!live.preview) {
+      setPreviewError('')
+      showPreview(app, result)
+      return
+    }
+    if (String(result.accepted_commit || '') === String(live.preview.accepted_commit || '')) return
+    if (!live.draft) {
+      showPreview(app, result)
+      return
+    }
+    const theirs = listingDraftFromPreview(result, app)
+    const merged = mergeListingUpdate(listingDraftFromPreview(live.preview, app), live.draft, theirs)
+    liveRef.current = { ...live, preview: result, draft: merged.draft }
+    setPreview(result)
+    setDraft(merged.draft)
+    setDirty(merged.dirty)
+    setAgentConflicts((current) => {
+      const next = { ...current, ...merged.conflicts }
+      for (const field of Object.keys(next)) {
+        if (!listingFieldsDiffer(merged.draft, theirs, field)) delete next[field]
+      }
+      return next
+    })
+    // A listing that just became ready opens on Publish, unless that would
+    // hide edits the owner has not saved.
+    if (merged.dirty) setEditing(true)
+  }
+
+  function resolveAgentConflict(field, useAgent) {
+    const value = agentConflicts[field]
+    setAgentConflicts(({ [field]: _resolved, ...rest }) => rest)
+    if (!useAgent || !draft) return
+    const next = { ...draft, [field]: value, ...(field === 'icon' ? { iconChanged: false } : {}) }
+    const saved = listingDraftFromPreview(preview, candidate)
+    setDraft(next)
+    setDirty(Object.keys(LISTING_FIELD_LABELS).some((name) => listingFieldsDiffer(next, saved, name)))
+  }
+
+  // While the listing agent works, follow its chat and the accepted listing.
+  useEffect(() => {
+    if (!agentActive || !candidate) return undefined
+    const app = candidate
+    let cancelled = false
+    let busy = false
+    const tick = async () => {
+      if (busy || window.mobius?.visible === false) return
+      busy = true
+      try {
+        let status
+        try {
+          status = await onListingAgentStatus?.(app)
+        } catch {
+          status = undefined
+        }
+        if (cancelled) return
+        await refreshListingFromSource(app)
+        if (cancelled || status === undefined) return
+        setAgentRun((run) => (run?.appId === app.id ? listingAgentRunAfterStatus(run, status) : run))
+      } finally {
+        busy = false
+      }
+    }
+    const timer = setInterval(tick, LISTING_AGENT_POLL_MS)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [agentActive, candidate?.id])
 
   function askAgentForListing(focus) {
     const missing = (preview?.checklist || [])
@@ -477,20 +627,28 @@ export function PublisherTab({
                 <strong>This app isn’t ready to publish yet</strong>
                 <span>{previewError}</span>
                 {onListingAgent ? (
-                  <button type="button" className="st-btn st-btn-primary st-listing-agent"
-                          disabled={askingAgent} onClick={() => askAgent(previewError)}>
-                    {askingAgent ? 'Opening agent…' : 'Get it ready with an agent'}
-                  </button>
+                  agentActive ? (
+                    <button type="button" className="st-btn st-btn-primary st-listing-agent" onClick={viewAgent}>
+                      Agent working… View
+                    </button>
+                  ) : (
+                    <button type="button" className="st-btn st-btn-primary st-listing-agent"
+                            disabled={askingAgent} onClick={() => askAgent(previewError)}>
+                      {askingAgent ? 'Opening agent…' : 'Get it ready with an agent'}
+                    </button>
+                  )
                 ) : null}
               </div>
             </div>
           ) : !preview.ready || editing ? (
             <div className="st-listing-work">
               <ListingChecklist checklist={preview.checklist || []} agentBusy={askingAgent}
-                                onAgent={askAgentForListing} />
+                                agent={agentActive ? agentRun : null}
+                                onAgent={askAgentForListing} onViewAgent={viewAgent} />
+              <AgentConflicts conflicts={agentConflicts} onResolve={resolveAgentConflict} />
               {draft ? (
                 <ListingEditor
-                  key={`${candidate.id}:${preview.accepted_commit}`}
+                  key={`${candidate.id}:${editorEpoch}`}
                   draft={draft}
                   setDraft={(change) => { setDirty(true); setDraft(change) }}
                   app={candidate}
@@ -578,8 +736,8 @@ export function PublisherTab({
                   </button>
                   {onListingAgent ? (
                     <button type="button" className="st-btn st-btn-ghost"
-                            disabled={askingAgent || !!publishingId} onClick={() => askAgent('')}>
-                      {askingAgent ? 'Starting agent…' : 'Revise with an agent'}
+                            disabled={askingAgent || !!publishingId} onClick={agentActive ? viewAgent : () => askAgent('')}>
+                      {agentActive ? 'Agent working… View' : askingAgent ? 'Starting agent…' : 'Revise with an agent'}
                     </button>
                   ) : null}
                 </div>
